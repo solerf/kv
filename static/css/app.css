@@ -1,6 +1,6 @@
 :root {
-    --neo-border: 3px solid #000;
-    --neo-shadow: 4px 4px 0px #000;
+    --neo-border: 3px solid #5b6d7a;
+    --neo-shadow: 4px 4px 0px #5b6d7a;
 }
 
 body {
@@ -11,13 +11,14 @@ body {
 
 .neo-header {
     border-bottom: var(--neo-border);
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
     padding: 1rem 2rem;
 }
 
 .neo-header .navbar-brand {
-    color: #fff;
+    color: #000;
+    font-weight: bold;
 }
 
 .neo-table {
@@ -27,14 +28,15 @@ body {
 }
 
 .neo-table th {
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
     text-transform: uppercase;
     letter-spacing: 1px;
+    font-weight: bold;
 }
 
 .neo-table td {
-    border-top: 2px solid #000;
+    border-top: 2px solid #5b6d7a;
 }
 
 .neo-nav-link {
@@ -49,15 +51,15 @@ body {
 }
 
 .neo-nav-link:hover {
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
     transform: translate(-1px, -1px);
-    box-shadow: 3px 3px 0px #000;
+    box-shadow: 3px 3px 0px #4a5a66;
 }
 
 .neo-nav-link.active {
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
 }
 
 .neo-select {
@@ -77,7 +79,7 @@ body {
 
 .neo-card:hover {
     transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0px #000;
+    box-shadow: 6px 6px 0px #5b6d7a;
 }
 
 .clickable-table tbody tr {
@@ -95,18 +97,19 @@ body {
 
 .neo-modal {
     border: var(--neo-border);
-    box-shadow: 8px 8px 0px #000;
+    box-shadow: 8px 8px 0px #5b6d7a;
     border-radius: 0;
 }
 
 .neo-modal .modal-header {
     border-bottom: var(--neo-border);
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
+    font-weight: bold;
 }
 
 .neo-modal .modal-header .btn-close {
-    filter: invert(1);
+    filter: none;
 }
 
 .yaml-output {
@@ -136,17 +139,17 @@ body {
 }
 
 .neo-btn-light:hover {
-    background: #000;
-    color: #fff;
+    background: #5b6d7a;
+    color: #000;
     transform: translate(-1px, -1px);
-    box-shadow: 5px 5px 0px #333;
+    box-shadow: 5px 5px 0px #4a5a66;
 }
 
 .neo-btn-light:active {
     transform: translate(2px, 2px);
-    box-shadow: 0 0 0 #000;
-    background: #222;
-    color: #fff;
+    box-shadow: 0 0 0 #5b6d7a;
+    background: #4a5a66;
+    color: #000;
 }
 
 .neo-btn-danger {
@@ -191,4 +194,14 @@ body {
 .status-failed {
     color: #ff4136;
     font-weight: bold;
+}
+
+.badge {
+    border: 2px solid #5b6d7a !important;
+    font-family: "Courier New", monospace !important;
+    font-weight: bold !important;
+    padding: 0.35em 0.65em !important;
+    background: #5b6d7a !important;
+    color: #000 !important;
+    box-shadow: 2px 2px 0px #4a5a66 !important;
 }
