@@ -1,0 +1,40 @@
+package templates
+
+templ Dashboard(contexts []string) {
+	@Layout("kv - Kubernetes Viewer") {
+		<nav class="navbar neo-header d-flex align-items-center">
+			<span class="navbar-brand fw-bold m-0">kv</span>
+			<div class="ms-auto d-flex gap-3">
+				<select id="ctx-select" class="form-select neo-select w-auto">
+					for _, c := range contexts {
+						<option value={ c }>{ c }</option>
+					}
+				</select>
+				<select id="ns-select" class="form-select neo-select w-auto">
+				</select>
+			</div>
+		</nav>
+		<div class="container-fluid mt-4 px-4">
+			<div id="resources-section">
+				<p class="text-muted">Loading...</p>
+			</div>
+			<h3 class="mt-4 mb-3">Pods</h3>
+			<div id="pods-section" class="row">
+			</div>
+		</div>
+		<div class="modal fade" id="describe-modal" tabindex="-1">
+			<div class="modal-dialog modal-xl modal-dialog-scrollable">
+				<div class="modal-content neo-modal">
+					<div class="modal-header">
+						<h5 class="modal-title" id="describe-modal-title">Resource</h5>
+						<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+					</div>
+					<div class="modal-body">
+						<pre id="describe-modal-body" class="yaml-output"></pre>
+					</div>
+				</div>
+			</div>
+		</div>
+		@Script("/static/js/dashboard.js")
+	}
+}

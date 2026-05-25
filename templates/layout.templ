@@ -1,0 +1,21 @@
+package templates
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/static/css/bootstrap.min.css"/>
+			<link rel="stylesheet" href="/static/css/neobrutalismcss.css"/>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script defer src="/static/js/jquery.min.js"></script>
+			<script defer src="/static/js/bootstrap.bundle.min.js"></script>
+			<script defer src="/static/js/chart.umd.js"></script>
+		</head>
+		<body>
+			{ children... }
+		</body>
+	</html>
+}

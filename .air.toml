@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "templ generate && go build -o ./tmp/kv ."
+  bin = "./tmp/kv"
+  delay = 1000
+  include_ext = ["go", "templ", "css", "js"]
+  include_dir = [".", "server", "handlers", "k8s", "config", "templates", "static"]
+  exclude_dir = ["tmp", "node_modules", "bin"]
+  exclude_regex = ["_templ\\.go$"]
+  kill_delay = 500
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

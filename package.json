@@ -1,0 +1,14 @@
+{
+  "name": "kv",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "node scripts/copy-assets.js"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.3",
+    "neobrutalismcss": "^1.0.0",
+    "jquery": "^3.7.1",
+    "chart.js": "^4.4.8"
+  }
+}
