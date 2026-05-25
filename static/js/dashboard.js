@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const ctx = ctxSelect.value;
         nsSelect.innerHTML = "";
         showPlaceholders();
-        fetch("/api/namespaces?context=" + encodeURIComponent(ctx))
+        return fetch("/api/namespaces?context=" + encodeURIComponent(ctx))
             .then((r) => r.json())
             .then((namespaces) => {
                 namespaces.forEach((ns) => {
@@ -75,7 +75,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     opt.textContent = ns;
                     nsSelect.appendChild(opt);
                 });
-                loadData();
+                return namespaces;
             });
     }
 
@@ -199,5 +199,33 @@ document.addEventListener("DOMContentLoaded", function () {
     ctxSelect.addEventListener("change", updateNamespaces);
     nsSelect.addEventListener("change", loadData);
 
-    updateNamespaces();
+    // Restore context and namespace from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlContext = urlParams.get("context");
+    const urlNamespace = urlParams.get("namespace");
+
+    if (urlContext) {
+        // Try to select the context from URL
+        for (let i = 0; i < ctxSelect.options.length; i++) {
+            if (ctxSelect.options[i].value === urlContext) {
+                ctxSelect.selectedIndex = i;
+                break;
+            }
+        }
+    }
+
+    updateNamespaces().then(() => {
+        if (urlNamespace) {
+            // Try to select the namespace from URL
+            for (let i = 0; i < nsSelect.options.length; i++) {
+                if (nsSelect.options[i].value === urlNamespace) {
+                    nsSelect.selectedIndex = i;
+                    loadData();
+                    return;
+                }
+            }
+        }
+        // If no URL namespace or not found, load with the first namespace
+        loadData();
+    });
 });

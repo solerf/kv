@@ -9,7 +9,7 @@ const assets = [
     out: "css/bootstrap.min.css",
   },
   {
-    src: "node_modules/neobrutalismcss/dist/css/neobrutalismcss.css",
+    src: "node_modules/neobrutalismcss/dist/index.min.css",
     out: "css/neobrutalismcss.css",
   },
   {

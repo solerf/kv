@@ -12,6 +12,7 @@ import (
 	"kv/config"
 	"kv/handlers"
 	"kv/k8s"
+	"kv/static"
 )
 
 type Config struct {
@@ -61,10 +62,11 @@ func New(ctx context.Context, cfg Config) (*http.Server, error) {
 }
 
 func staticHandler() http.Handler {
-	dir := "static"
-	if d := os.Getenv("KV_STATIC_DIR"); d != "" {
-		dir = d
+	// Allow override for development
+	if dir := os.Getenv("KV_STATIC_DIR"); dir != "" {
+		return http.StripPrefix("/static/", http.FileServer(http.Dir(dir)))
 	}
-	fs := http.StripPrefix("/static/", http.FileServer(http.Dir(dir)))
-	return fs
+
+	// Use embedded filesystem for production
+	return http.StripPrefix("/static/", http.FileServer(http.FS(static.FS)))
 }
