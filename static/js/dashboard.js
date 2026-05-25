@@ -75,6 +75,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     opt.textContent = ns;
                     nsSelect.appendChild(opt);
                 });
+                // After namespaces are loaded, load data with the first namespace
+                if (namespaces.length > 0) {
+                    loadData();
+                }
                 return namespaces;
             });
     }
@@ -220,12 +224,13 @@ document.addEventListener("DOMContentLoaded", function () {
             for (let i = 0; i < nsSelect.options.length; i++) {
                 if (nsSelect.options[i].value === urlNamespace) {
                     nsSelect.selectedIndex = i;
+                    // loadData was already called by updateNamespaces,
+                    // but we need to call it again with the correct namespace
                     loadData();
                     return;
                 }
             }
         }
-        // If no URL namespace or not found, load with the first namespace
-        loadData();
+        // If no URL namespace or not found, loadData was already called by updateNamespaces
     });
 });
