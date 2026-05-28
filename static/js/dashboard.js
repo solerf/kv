@@ -108,12 +108,25 @@ document.addEventListener("DOMContentLoaded", function () {
                             t.items.length +
                             "</span></h4>";
                         html +=
-                            '<div class="table-responsive"><table class="table neo-table clickable-table" data-kind="' + t.kind + '"><thead><tr><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
+                            '<div class="table-responsive"><table class="table neo-table" data-kind="' + t.kind + '"><thead><tr><th style="width: 30px;"></th><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
                         t.items.forEach((item) => {
+                            // Build the name cell content
+                            let nameContent = '<strong>' + item.name + '</strong>';
+                            if (t.kind === 'ingresses' && item.deterministicDNS) {
+                                // Split by comma and display each DNS value on a new line
+                                const dnsValues = item.deterministicDNS.split(',').map(v => v.trim());
+                                nameContent += '<br><small class="text-muted">';
+                                dnsValues.forEach((dns, idx) => {
+                                    if (idx > 0) nameContent += '<br>';
+                                    nameContent += dns;
+                                });
+                                nameContent += '</small>';
+                            }
+
                             html +=
-                                '<tr class="resource-row" data-name="' + item.name + '"><td><strong>' +
-                                item.name +
-                                "</strong></td><td>" +
+                                '<tr data-name="' + item.name + '"><td><i class="bi bi-arrows-fullscreen resource-view-icon" style="cursor: pointer;"></i></td><td>' +
+                                nameContent +
+                                "</td><td>" +
                                 item.namespace +
                                 "</td><td>" +
                                 item.age +
@@ -143,7 +156,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         else if (pod.status === "Failed" || pod.status === "CrashLoopBackOff")
                             statusClass = "status-failed";
 
-                        html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 pod-card" data-name="' + pod.name + '">';
+                        html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 position-relative" data-name="' + pod.name + '">';
+                        html += '<i class="bi bi-arrows-fullscreen pod-view-icon position-absolute top-0 end-0 m-2" style="cursor: pointer; font-size: 1.2rem;"></i>';
                         html +=
                             '<h6 class="fw-bold" title="' +
                             pod.name +
@@ -181,21 +195,25 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function bindRowClicks() {
-        document.querySelectorAll(".resource-row").forEach((row) => {
-            row.addEventListener("click", function () {
-                const kind = this.closest("table").dataset.kind;
-                const name = this.dataset.name;
+        document.querySelectorAll(".resource-view-icon").forEach((icon) => {
+            icon.addEventListener("click", function (e) {
+                e.stopPropagation();
+                const row = this.closest("tr");
+                const kind = row.closest("table").dataset.kind;
+                const name = row.dataset.name;
                 openDescribe(kind, name);
             });
         });
     }
 
     function bindPodClicks() {
-        document.querySelectorAll(".pod-card").forEach((card) => {
-            card.addEventListener("click", function () {
+        document.querySelectorAll(".pod-view-icon").forEach((icon) => {
+            icon.addEventListener("click", function (e) {
+                e.stopPropagation();
+                const card = this.closest("div[data-name]");
                 const ctx = ctxSelect.value;
                 const ns = nsSelect.value;
-                const name = this.dataset.name;
+                const name = card.dataset.name;
                 window.location.href =
                     "/pod?context=" + encodeURIComponent(ctx) +
                     "&namespace=" + encodeURIComponent(ns) +

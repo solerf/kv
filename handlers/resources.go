@@ -72,12 +72,23 @@ func (h *Handler) Resources(w http.ResponseWriter, r *http.Request) {
 		}
 		rows := make([]map[string]string, 0, len(items))
 		for _, item := range items {
-			rows = append(rows, map[string]string{
+			row := map[string]string{
 				"name":      item.GetName(),
 				"namespace": item.GetNamespace(),
 				"age":       item.GetCreationTimestamp().Time.Format("2006-01-02 15:04"),
 				"status":    k8s.ExtractStatus(item),
-			})
+			}
+
+			// For ingresses, extract deterministicDNS tag if present
+			if kind == "ingresses" {
+				if annotations := item.GetAnnotations(); annotations != nil {
+					if dnsValue, ok := annotations["k8s.hulu.com/deterministic-dns-name"]; ok {
+						row["deterministicDNS"] = dnsValue
+					}
+				}
+			}
+
+			rows = append(rows, row)
 		}
 		if len(rows) > 0 {
 			tables = append(tables, resourceTable{Kind: kind, Items: rows})

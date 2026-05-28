@@ -9,6 +9,18 @@ const assets = [
     out: "css/bootstrap.min.css",
   },
   {
+    src: "node_modules/bootstrap-icons/font/bootstrap-icons.min.css",
+    out: "css/bootstrap-icons.min.css",
+  },
+  {
+    src: "node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff",
+    out: "css/fonts/bootstrap-icons.woff",
+  },
+  {
+    src: "node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff2",
+    out: "css/fonts/bootstrap-icons.woff2",
+  },
+  {
     src: "node_modules/neobrutalismcss/dist/index.min.css",
     out: "css/neobrutalismcss.css",
   },

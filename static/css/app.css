@@ -82,17 +82,31 @@ body {
     box-shadow: 6px 6px 0px #5b6d7a;
 }
 
-.clickable-table tbody tr {
-    cursor: pointer;
+.neo-table tbody tr {
     transition: background 0.1s;
 }
 
-.clickable-table tbody tr:hover {
-    background: #e8e8e8;
+.neo-table tbody tr:hover {
+    background: #f8f8f8;
 }
 
-.pod-card {
-    cursor: pointer;
+.resource-view-icon {
+    color: #5b6d7a;
+    transition: color 0.2s;
+}
+
+.resource-view-icon:hover {
+    color: #000;
+}
+
+.pod-view-icon {
+    color: #5b6d7a;
+    transition: color 0.2s, transform 0.2s;
+}
+
+.pod-view-icon:hover {
+    color: #000;
+    transform: scale(1.1);
 }
 
 .neo-modal {
