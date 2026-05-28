@@ -10,6 +10,20 @@ document.addEventListener("DOMContentLoaded", function () {
         "&name=" +
         encodeURIComponent(name);
 
+    // Pod Info
+    fetch("/api/pod/info?" + params)
+        .then((r) => r.json())
+        .then((info) => {
+            document.getElementById("pod-status").textContent = info.status || "-";
+            document.getElementById("pod-image").textContent = info.image || "-";
+            document.getElementById("pod-ip").textContent = info.ip || "-";
+            document.getElementById("pod-node").textContent = info.node || "-";
+            document.getElementById("pod-age").textContent = info.age || "-";
+        })
+        .catch((err) => {
+            console.error("Error fetching pod info:", err);
+        });
+
     // Describe
     const describeOutput = document.getElementById("describe-output");
     fetch("/api/describe?" + params + "&kind=pods")

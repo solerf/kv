@@ -47,6 +47,7 @@ func New(ctx context.Context, cfg Config) (*http.Server, error) {
 	r.Get("/api/pods", h.Pods)
 	r.Get("/api/describe", h.Describe)
 	r.Get("/pod", h.PodDetail)
+	r.Get("/api/pod/info", h.PodInfo)
 	r.Get("/api/pod/metrics", h.PodMetrics)
 	r.Get("/api/pod/logs", h.PodLogs)
 	r.Delete("/api/pod", h.PodDelete)

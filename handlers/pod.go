@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"kv/k8s"
 	"kv/templates"
 )
 
@@ -18,6 +19,40 @@ func (h *Handler) PodDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 
 	templates.PodDetail(kubeCtx, ns, name).Render(r.Context(), w)
+}
+
+func (h *Handler) PodInfo(w http.ResponseWriter, r *http.Request) {
+	kubeCtx := r.URL.Query().Get("context")
+	ns := r.URL.Query().Get("namespace")
+	name := r.URL.Query().Get("name")
+
+	client, ok := h.clients[kubeCtx]
+	if !ok {
+		http.Error(w, "unknown context", http.StatusBadRequest)
+		return
+	}
+
+	obj, err := client.Get(r.Context(), "pods", ns, name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ip, _, _ := k8s.NestedString(obj.Object, "status", "podIP")
+	node, _, _ := k8s.NestedString(obj.Object, "spec", "nodeName")
+	image := k8s.ExtractFirstContainerImage(*obj)
+
+	info := map[string]string{
+		"name":   obj.GetName(),
+		"status": k8s.ExtractStatus(*obj),
+		"age":    obj.GetCreationTimestamp().Time.Format("2006-01-02 15:04"),
+		"ip":     ip,
+		"node":   node,
+		"image":  image,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, info)
 }
 
 func (h *Handler) PodMetrics(w http.ResponseWriter, r *http.Request) {
