@@ -157,6 +157,10 @@ document.addEventListener("DOMContentLoaded", function () {
                             pod.status +
                             "</span></p>";
                         html +=
+                            '<small class="text-muted d-block">Image: ' +
+                            (pod.image || "-") +
+                            "</small>";
+                        html +=
                             '<small class="text-muted d-block">IP: ' +
                             (pod.ip || "-") +
                             "</small>";

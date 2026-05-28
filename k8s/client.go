@@ -146,6 +146,25 @@ func ExtractStatus(item unstructured.Unstructured) string {
 	return "-"
 }
 
+func ExtractFirstContainerImage(item unstructured.Unstructured) string {
+	containers, found, _ := unstructured.NestedSlice(item.Object, "spec", "containers")
+	if !found || len(containers) == 0 {
+		return "-"
+	}
+
+	firstContainer, ok := containers[0].(map[string]interface{})
+	if !ok {
+		return "-"
+	}
+
+	image, ok := firstContainer["image"].(string)
+	if !ok {
+		return "-"
+	}
+
+	return image
+}
+
 func NestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
 	return unstructured.NestedString(obj, fields...)
 }

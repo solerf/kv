@@ -110,18 +110,21 @@ func (h *Handler) Pods(w http.ResponseWriter, r *http.Request) {
 		Age    string `json:"age"`
 		IP     string `json:"ip"`
 		Node   string `json:"node"`
+		Image  string `json:"image"`
 	}
 
 	pods := make([]podInfo, 0, len(items))
 	for _, item := range items {
 		ip, _, _ := k8s.NestedString(item.Object, "status", "podIP")
 		node, _, _ := k8s.NestedString(item.Object, "spec", "nodeName")
+		image := k8s.ExtractFirstContainerImage(item)
 		pods = append(pods, podInfo{
 			Name:   item.GetName(),
 			Status: k8s.ExtractStatus(item),
 			Age:    item.GetCreationTimestamp().Time.Format("2006-01-02 15:04"),
 			IP:     ip,
 			Node:   node,
+			Image:  image,
 		})
 	}
 
