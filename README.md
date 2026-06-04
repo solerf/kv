@@ -8,3 +8,16 @@ Flags:
   -k, --kubeconfig=STRING        Path to kubeconfig file ($KUBECONFIG).
   -c, --config="~/kv.context"    Path to kv.context file.
 ```
+
+## Development
+
+```bash
+# Install dependencies
+make install
+
+# Run with hot reload (recommended)
+make dev
+
+# Build and run normally
+make run
+```

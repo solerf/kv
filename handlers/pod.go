@@ -40,7 +40,7 @@ func (h *Handler) PodInfo(w http.ResponseWriter, r *http.Request) {
 
 	ip, _, _ := k8s.NestedString(obj.Object, "status", "podIP")
 	node, _, _ := k8s.NestedString(obj.Object, "spec", "nodeName")
-	image := k8s.ExtractFirstContainerImage(*obj)
+	image := k8s.ExtractMainContainerImage(*obj)
 
 	info := map[string]string{
 		"name":   obj.GetName(),

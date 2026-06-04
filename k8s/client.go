@@ -165,6 +165,48 @@ func ExtractFirstContainerImage(item unstructured.Unstructured) string {
 	return image
 }
 
+// ExtractMainContainerImage returns the image of the main application container
+// Prioritizes containers with common main app names (app, main) over sidecars
+func ExtractMainContainerImage(item unstructured.Unstructured) string {
+	containers, found, _ := unstructured.NestedSlice(item.Object, "spec", "containers")
+	if !found || len(containers) == 0 {
+		return "-"
+	}
+
+	// Common names for main application containers
+	mainContainerNames := []string{"app", "main", "application"}
+
+	// First pass: look for containers with common main app names
+	for _, c := range containers {
+		container, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name, ok := container["name"].(string)
+		if !ok {
+			continue
+		}
+
+		for _, mainName := range mainContainerNames {
+			if name == mainName {
+				if image, ok := container["image"].(string); ok {
+					return image
+				}
+			}
+		}
+	}
+
+	// Fallback: return the first container if no match found
+	if firstContainer, ok := containers[0].(map[string]interface{}); ok {
+		if image, ok := firstContainer["image"].(string); ok {
+			return image
+		}
+	}
+
+	return "-"
+}
+
 func NestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
 	return unstructured.NestedString(obj, fields...)
 }

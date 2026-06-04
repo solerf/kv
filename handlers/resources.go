@@ -128,7 +128,7 @@ func (h *Handler) Pods(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		ip, _, _ := k8s.NestedString(item.Object, "status", "podIP")
 		node, _, _ := k8s.NestedString(item.Object, "spec", "nodeName")
-		image := k8s.ExtractFirstContainerImage(item)
+		image := k8s.ExtractMainContainerImage(item)
 		pods = append(pods, podInfo{
 			Name:   item.GetName(),
 			Status: k8s.ExtractStatus(item),
