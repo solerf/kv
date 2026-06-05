@@ -122,9 +122,24 @@ func (c *Client) Get(ctx context.Context, kind, namespace, name string) (*unstru
 }
 
 func ExtractStatus(item unstructured.Unstructured) string {
+	// For pods, surface a container's waiting reason (e.g. CrashLoopBackOff)
+	// since status.phase stays "Running" while a container keeps restarting.
+	if reason := containerWaitingReason(item); reason != "" {
+		return reason
+	}
+
 	phase, found, _ := unstructured.NestedString(item.Object, "status", "phase")
 	if found {
 		return phase
+	}
+
+	// For workloads (deployments, statefulsets, daemonsets, ...) report the
+	// ready replica count. This must come before the generic conditions check,
+	// otherwise we'd return a condition type (e.g. "Available") instead.
+	replicas, found, _ := unstructured.NestedInt64(item.Object, "status", "readyReplicas")
+	if found {
+		desired, _, _ := unstructured.NestedInt64(item.Object, "spec", "replicas")
+		return fmt.Sprintf("%d/%d ready", replicas, desired)
 	}
 
 	conditions, found, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
@@ -137,32 +152,26 @@ func ExtractStatus(item unstructured.Unstructured) string {
 		}
 	}
 
-	replicas, found, _ := unstructured.NestedInt64(item.Object, "status", "readyReplicas")
-	if found {
-		desired, _, _ := unstructured.NestedInt64(item.Object, "spec", "replicas")
-		return fmt.Sprintf("%d/%d ready", replicas, desired)
-	}
-
 	return "-"
 }
 
-func ExtractFirstContainerImage(item unstructured.Unstructured) string {
-	containers, found, _ := unstructured.NestedSlice(item.Object, "spec", "containers")
-	if !found || len(containers) == 0 {
-		return "-"
+// containerWaitingReason returns the first container waiting reason found in a
+// pod's status (e.g. CrashLoopBackOff, ImagePullBackOff), or "" if none.
+func containerWaitingReason(item unstructured.Unstructured) string {
+	statuses, found, _ := unstructured.NestedSlice(item.Object, "status", "containerStatuses")
+	if !found {
+		return ""
 	}
-
-	firstContainer, ok := containers[0].(map[string]interface{})
-	if !ok {
-		return "-"
+	for _, s := range statuses {
+		cs, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if reason, _, _ := unstructured.NestedString(cs, "state", "waiting", "reason"); reason != "" {
+			return reason
+		}
 	}
-
-	image, ok := firstContainer["image"].(string)
-	if !ok {
-		return "-"
-	}
-
-	return image
+	return ""
 }
 
 // ExtractMainContainerImage returns the image of the main application container
@@ -278,6 +287,8 @@ const (
 	kiBToMiB              = 1024
 	miBToMiB              = 1
 	giBToMiB              = 1024
+	tiBToMiB              = 1024 * 1024
+	piBToMiB              = 1024 * 1024 * 1024
 	bytesToMiB            = 1024 * 1024
 )
 
@@ -308,6 +319,14 @@ func parseMem(s string) int64 {
 	if len(s) > 2 && s[len(s)-2:] == "Gi" {
 		fmt.Sscanf(s, "%dGi", &val)
 		return val * giBToMiB
+	}
+	if len(s) > 2 && s[len(s)-2:] == "Ti" {
+		fmt.Sscanf(s, "%dTi", &val)
+		return val * tiBToMiB
+	}
+	if len(s) > 2 && s[len(s)-2:] == "Pi" {
+		fmt.Sscanf(s, "%dPi", &val)
+		return val * piBToMiB
 	}
 	fmt.Sscanf(s, "%d", &val)
 	return val / bytesToMiB

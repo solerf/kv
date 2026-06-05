@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 
@@ -16,6 +17,7 @@ import (
 type CLI struct {
 	Kubeconfig string `help:"Path to kubeconfig file." type:"path" short:"k" env:"KUBECONFIG"`
 	Config     string `help:"Path to kv.context file." type:"path" short:"c" default:"~/kv.context"`
+	Addr       string `help:"Address to listen on." short:"a" default:":8989"`
 }
 
 func main() {
@@ -35,7 +37,7 @@ func main() {
 	}
 
 	srv, err := server.New(ctx, server.Config{
-		Addr:       ":8888",
+		Addr:       cli.Addr,
 		Kubeconfig: cli.Kubeconfig,
 		Entries:    cfg.Entries,
 	})
@@ -44,11 +46,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("kv listening on http://0.0.0.0:8888\n")
+	fmt.Printf("kv listening on http://localhost%s\n", cli.Addr)
 
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
 	}()
 
 	if err = srv.ListenAndServe(); err != nil && ctx.Err() == nil {

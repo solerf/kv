@@ -7,6 +7,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const describeTitle = document.getElementById("describe-modal-title");
     const describeBody = document.getElementById("describe-modal-body");
 
+    function escapeHTML(value) {
+        const div = document.createElement("div");
+        div.textContent = value == null ? "" : String(value);
+        return div.innerHTML;
+    }
+
     function tablePlaceholder() {
         let html = "";
         for (let i = 0; i < 2; i++) {
@@ -103,35 +109,35 @@ document.addEventListener("DOMContentLoaded", function () {
                     tables.forEach((t) => {
                         html +=
                             '<h4 class="mt-3">' +
-                            t.kind +
+                            escapeHTML(t.kind) +
                             ' <span class="badge bg-dark">' +
                             t.items.length +
                             "</span></h4>";
                         html +=
-                            '<div class="table-responsive"><table class="table neo-table" data-kind="' + t.kind + '"><thead><tr><th style="width: 30px;"></th><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
+                            '<div class="table-responsive"><table class="table neo-table" data-kind="' + escapeHTML(t.kind) + '"><thead><tr><th style="width: 30px;"></th><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
                         t.items.forEach((item) => {
                             // Build the name cell content
-                            let nameContent = '<strong>' + item.name + '</strong>';
+                            let nameContent = '<strong>' + escapeHTML(item.name) + '</strong>';
                             if (t.kind === 'ingresses' && item.deterministicDNS) {
                                 // Split by comma and display each DNS value on a new line
                                 const dnsValues = item.deterministicDNS.split(',').map(v => v.trim());
                                 nameContent += '<br><small class="text-muted">';
                                 dnsValues.forEach((dns, idx) => {
                                     if (idx > 0) nameContent += '<br>';
-                                    nameContent += dns;
+                                    nameContent += escapeHTML(dns);
                                 });
                                 nameContent += '</small>';
                             }
 
                             html +=
-                                '<tr data-name="' + item.name + '"><td><i class="bi bi-arrows-fullscreen resource-view-icon" style="cursor: pointer;"></i></td><td>' +
+                                '<tr data-name="' + escapeHTML(item.name) + '"><td><i class="bi bi-arrows-fullscreen resource-view-icon" style="cursor: pointer;"></i></td><td>' +
                                 nameContent +
                                 "</td><td>" +
-                                item.namespace +
+                                escapeHTML(item.namespace) +
                                 "</td><td>" +
-                                item.age +
+                                escapeHTML(item.age) +
                                 "</td><td>" +
-                                item.status +
+                                escapeHTML(item.status) +
                                 "</td></tr>";
                         });
                         html += "</tbody></table></div>";
@@ -151,40 +157,40 @@ document.addEventListener("DOMContentLoaded", function () {
                 } else {
                     pods.forEach((pod) => {
                         let statusClass = "";
-                        if (pod.status === "Running") statusClass = "status-running";
-                        else if (pod.status === "Pending") statusClass = "status-pending";
-                        else if (pod.status === "Failed" || pod.status === "CrashLoopBackOff")
+                        if (pod.status === "Running" || pod.status === "Succeeded") statusClass = "status-running";
+                        else if (pod.status === "Pending" || pod.status === "ContainerCreating") statusClass = "status-pending";
+                        else if (pod.status === "Failed" || /BackOff|Error|Crash|Evicted|Invalid/i.test(pod.status))
                             statusClass = "status-failed";
 
-                        html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 position-relative" data-name="' + pod.name + '">';
+                        html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 position-relative" data-name="' + escapeHTML(pod.name) + '">';
                         html += '<i class="bi bi-arrows-fullscreen pod-view-icon position-absolute top-0 end-0 m-2" style="cursor: pointer; font-size: 1.2rem;"></i>';
                         html +=
                             '<h6 class="fw-bold" title="' +
-                            pod.name +
+                            escapeHTML(pod.name) +
                             '">' +
-                            pod.name +
+                            escapeHTML(pod.name) +
                             "</h6>";
                         html +=
                             '<p class="mb-1"><span class="' +
                             statusClass +
                             '">' +
-                            pod.status +
+                            escapeHTML(pod.status) +
                             "</span></p>";
                         html +=
                             '<small class="text-muted d-block">Image: ' +
-                            (pod.image || "-") +
+                            escapeHTML(pod.image || "-") +
                             "</small>";
                         html +=
                             '<small class="text-muted d-block">IP: ' +
-                            (pod.ip || "-") +
+                            escapeHTML(pod.ip || "-") +
                             "</small>";
                         html +=
                             '<small class="text-muted d-block">Node: ' +
-                            (pod.node || "-") +
+                            escapeHTML(pod.node || "-") +
                             "</small>";
                         html +=
                             '<small class="text-muted d-block">Age: ' +
-                            pod.age +
+                            escapeHTML(pod.age) +
                             "</small>";
                         html += "</div></div>";
                     });

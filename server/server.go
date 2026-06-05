@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -29,9 +30,16 @@ func New(ctx context.Context, cfg Config) (*http.Server, error) {
 		}
 		client, err := k8s.NewClient(cfg.Kubeconfig, entry.Context)
 		if err != nil {
-			return nil, err
+			// Tolerate a single bad/unreachable context instead of failing
+			// the whole server; the others remain usable.
+			fmt.Fprintf(os.Stderr, "warning: skipping context %q: %v\n", entry.Context, err)
+			continue
 		}
 		clients[entry.Context] = client
+	}
+
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no usable contexts: every configured context failed to connect")
 	}
 
 	h := handlers.New(clients, cfg.Entries)

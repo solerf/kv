@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 
@@ -10,6 +10,17 @@ import (
 	"kv/k8s"
 	"kv/templates"
 )
+
+// deterministicDNSName returns the value of the annotation whose key ends with
+// "deterministic-dns-name" (regardless of its domain prefix), or "" if absent.
+func deterministicDNSName(annotations map[string]string) string {
+	for key, value := range annotations {
+		if strings.HasSuffix(key, "deterministic-dns-name") {
+			return value
+		}
+	}
+	return ""
+}
 
 type Handler struct {
 	clients map[string]*k8s.Client
@@ -37,14 +48,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Namespaces(w http.ResponseWriter, r *http.Request) {
 	ctx := r.URL.Query().Get("context")
-	var namespaces []string
+	namespaces := make([]string, 0)
 	for _, e := range h.entries {
 		if e.Context == ctx {
 			namespaces = append(namespaces, e.Namespace)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(namespaces)
+	writeJSON(w, namespaces)
 }
 
 func (h *Handler) Resources(w http.ResponseWriter, r *http.Request) {
@@ -81,10 +92,8 @@ func (h *Handler) Resources(w http.ResponseWriter, r *http.Request) {
 
 			// For ingresses, extract deterministicDNS tag if present
 			if kind == "ingresses" {
-				if annotations := item.GetAnnotations(); annotations != nil {
-					if dnsValue, ok := annotations["k8s.hulu.com/deterministic-dns-name"]; ok {
-						row["deterministicDNS"] = dnsValue
-					}
+				if dnsValue := deterministicDNSName(item.GetAnnotations()); dnsValue != "" {
+					row["deterministicDNS"] = dnsValue
 				}
 			}
 
@@ -96,7 +105,7 @@ func (h *Handler) Resources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tables)
+	writeJSON(w, tables)
 }
 
 func (h *Handler) Pods(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +149,7 @@ func (h *Handler) Pods(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pods)
+	writeJSON(w, pods)
 }
 
 func (h *Handler) Describe(w http.ResponseWriter, r *http.Request) {
