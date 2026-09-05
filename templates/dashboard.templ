@@ -4,7 +4,7 @@ templ Dashboard(contexts []string) {
 	@Layout("kv - Kubernetes Viewer") {
 		<nav class="navbar neo-header d-flex align-items-center">
 			<span class="navbar-brand fw-bold m-0">kv</span>
-			<div class="ms-auto d-flex gap-3">
+			<div class="ms-auto d-flex gap-2 align-items-center">
 				<select id="ctx-select" class="form-select neo-select w-auto">
 					for _, c := range contexts {
 						<option value={ c }>{ c }</option>
@@ -12,13 +12,16 @@ templ Dashboard(contexts []string) {
 				</select>
 				<select id="ns-select" class="form-select neo-select w-auto">
 				</select>
+				<button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+					<i class="bi bi-sun-fill"></i>
+				</button>
 			</div>
 		</nav>
-		<div class="container-fluid mt-4 px-4">
+		<div class="container-fluid mt-2 px-3">
 			<div id="resources-section">
-				<p class="text-muted">Loading...</p>
+				<p class="text-muted mb-2">Loading...</p>
 			</div>
-			<h3 class="mt-4 mb-3">Pods</h3>
+			<h3 class="mt-3 mb-2">Pods</h3>
 			<div id="pods-section" class="row">
 			</div>
 		</div>

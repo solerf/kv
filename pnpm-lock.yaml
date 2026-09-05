@@ -20,9 +20,6 @@ importers:
       jquery:
         specifier: ^3.7.1
         version: 3.7.1
-      neobrutalismcss:
-        specifier: ^1.0.0
-        version: 1.0.0
 
 packages:
 
@@ -47,9 +44,6 @@ packages:
   jquery@3.7.1:
     resolution: {integrity: sha512-m4avr8yL8kmFN8psrbFFFmB/If14iN5o9nw/NgnnM+kybDJpRsAynV2BsfpTYrTRysYUdADVD7CkUUizgkpLfg==}
 
-  neobrutalismcss@1.0.0:
-    resolution: {integrity: sha512-f+eDPFe0553Rc8MDJj4QAYhQa+J30hOeLbEfDmA558h25b5nB5RyGflcLDEm04eIlqs+J8/xQiH0TIMSgCMK0w==}
-
 snapshots:
 
   '@kurkle/color@0.3.4': {}
@@ -67,5 +61,3 @@ snapshots:
       '@kurkle/color': 0.3.4
 
   jquery@3.7.1: {}
-
-  neobrutalismcss@1.0.0: {}
