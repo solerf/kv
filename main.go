@@ -11,6 +11,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"kv/config"
+	"kv/k8s"
 	"kv/server"
 )
 
@@ -36,15 +37,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv, err := server.New(ctx, server.Config{
-		Addr:       cli.Addr,
-		Kubeconfig: cli.Kubeconfig,
-		Entries:    cfg.Entries,
-	})
+	contexts := make([]string, 0, len(cfg.Entries))
+	for _, entry := range cfg.Entries {
+		contexts = append(contexts, entry.Context)
+	}
+
+	mgr, err := k8s.NewManager(cli.Kubeconfig, contexts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+
+	srv := server.New(ctx, server.Config{
+		Addr:    cli.Addr,
+		Manager: mgr,
+		Entries: cfg.Entries,
+	})
 
 	fmt.Printf("kv listening on http://localhost%s\n", cli.Addr)
 
@@ -52,7 +60,12 @@ func main() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdownCtx)
+		// Stop serving first (drains in-flight requests), then release the
+		// manager's cluster connections.
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "graceful shutdown failed: %v\n", err)
+		}
+		mgr.Close()
 	}()
 
 	if err = srv.ListenAndServe(); err != nil && ctx.Err() == nil {

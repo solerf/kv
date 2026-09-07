@@ -1,15 +1,18 @@
-.PHONY: generate build run install assets dev
+.PHONY: build
 
-install:
+install-js:
 	pnpm install
 
-assets: install
+assets: install-js
 	node scripts/copy-assets.js
 
 generate:
 	templ generate
 
-build: assets generate
+lint:
+	golangci-lint run ./...
+
+build: lint assets generate
 	go build -o bin/kv .
 
 run: assets generate

@@ -1,0 +1,19 @@
+# kv.context — which cluster context / namespace pairs kv should show.
+#
+# One entry per line, in the form:
+#
+#   <kube-context>:<namespace>
+#
+# - Lines starting with "#" are comments; blank lines are ignored.
+# - The context must exist in your kubeconfig.
+# - Omit the namespace (just the context) to list resources across ALL namespaces.
+#
+# Copy this file to ~/kv.context (or pass --config) and edit with real values.
+
+prod-us-east:payments
+prod-us-east:checkout
+staging-eu-west:payments
+dev-cluster:default
+
+# Namespace omitted -> all namespaces in this context
+minikube

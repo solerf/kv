@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,15 +13,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-type Client struct {
-	dynamic   dynamic.Interface
-	clientset kubernetes.Interface
+// client is a single connection to one kube context. It is unexported; callers
+// go through Manager, which owns one client per context.
+type client struct {
+	dynamic    dynamic.Interface
+	clientset  kubernetes.Interface
+	httpClient *http.Client
 }
 
-func NewClient(kubeconfig, kubeContext string) (*Client, error) {
+func newClient(kubeconfig, kubeContext string) (*client, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfig != "" {
 		rules.ExplicitPath = kubeconfig
@@ -40,17 +45,30 @@ func NewClient(kubeconfig, kubeContext string) (*Client, error) {
 		return nil, fmt.Errorf("kubeconfig found but could not connect: %w", err)
 	}
 
-	dyn, err := dynamic.NewForConfig(config)
+	// Share one HTTP client between the dynamic and typed clients so they use
+	// the same connection pool, which close() can then release as a unit.
+	httpClient, err := rest.HTTPClientFor(config)
+	if err != nil {
+		return nil, fmt.Errorf("could not build HTTP client: %w", err)
+	}
+
+	dyn, err := dynamic.NewForConfigAndClient(config, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to Kubernetes cluster: %w", err)
 	}
 
-	cs, err := kubernetes.NewForConfig(config)
+	cs, err := kubernetes.NewForConfigAndClient(config, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("could not create clientset: %w", err)
 	}
 
-	return &Client{dynamic: dyn, clientset: cs}, nil
+	return &client{dynamic: dyn, clientset: cs, httpClient: httpClient}, nil
+}
+
+// close releases the client's idle keep-alive connections. In-flight requests
+// are unaffected (CloseIdleConnections only touches idle connections).
+func (c *client) close() {
+	c.httpClient.CloseIdleConnections()
 }
 
 func hasKubeconfig(rules *clientcmd.ClientConfigLoadingRules) bool {
@@ -66,6 +84,9 @@ func hasKubeconfig(rules *clientcmd.ClientConfigLoadingRules) bool {
 	return false
 }
 
+// resourceGVR is the single source of truth for the GroupVersionResource (GVR)
+// of each supported kind. Models reference it by key from their gvr() method;
+// Describe resolves it from the kind string passed in the request.
 var resourceGVR = map[string]schema.GroupVersionResource{
 	"pods":         {Group: "", Version: "v1", Resource: "pods"},
 	"services":     {Group: "", Version: "v1", Resource: "services"},
@@ -79,12 +100,7 @@ var resourceGVR = map[string]schema.GroupVersionResource{
 	"cronjobs":     {Group: "batch", Version: "v1", Resource: "cronjobs"},
 }
 
-func (c *Client) List(ctx context.Context, kind, namespace string) ([]unstructured.Unstructured, error) {
-	gvr, ok := resourceGVR[kind]
-	if !ok {
-		return nil, fmt.Errorf("unsupported resource kind: %s", kind)
-	}
-
+func (c *client) listGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]unstructured.Unstructured, error) {
 	var res *unstructured.UnstructuredList
 	var err error
 
@@ -94,34 +110,39 @@ func (c *Client) List(ctx context.Context, kind, namespace string) ([]unstructur
 		res, err = c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	}
 	if err != nil {
-		return nil, fmt.Errorf("listing %s: %w", kind, err)
+		return nil, err
 	}
 
 	return res.Items, nil
 }
 
-func (c *Client) Get(ctx context.Context, kind, namespace, name string) (*unstructured.Unstructured, error) {
-	gvr, ok := resourceGVR[kind]
-	if !ok {
-		return nil, fmt.Errorf("unsupported resource kind: %s", kind)
-	}
-
-	var res *unstructured.Unstructured
-	var err error
-
+func (c *client) getGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
 	if namespace == "" {
-		res, err = c.dynamic.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
-	} else {
-		res, err = c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		return c.dynamic.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 	}
-	if err != nil {
-		return nil, fmt.Errorf("getting %s/%s: %w", kind, name, err)
-	}
-
-	return res, nil
+	return c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-func ExtractStatus(item unstructured.Unstructured) string {
+func (c *client) deletePod(ctx context.Context, namespace, name string) error {
+	return c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+func (c *client) streamLogs(ctx context.Context, namespace, name string, follow bool) (io.ReadCloser, error) {
+	tailLines := int64(200)
+	opts := &corev1.PodLogOptions{
+		Follow:    follow,
+		TailLines: &tailLines,
+	}
+	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
+	return req.Stream(ctx)
+}
+
+// formatAge renders a creation timestamp the way the UI expects it.
+func formatAge(u unstructured.Unstructured) string {
+	return u.GetCreationTimestamp().Format("2006-01-02 15:04")
+}
+
+func extractStatus(item unstructured.Unstructured) string {
 	// For pods, surface a container's waiting reason (e.g. CrashLoopBackOff)
 	// since status.phase stays "Running" while a container keeps restarting.
 	if reason := containerWaitingReason(item); reason != "" {
@@ -174,15 +195,14 @@ func containerWaitingReason(item unstructured.Unstructured) string {
 	return ""
 }
 
-// ExtractMainContainerImage returns the image of the main application container
-// Prioritizes containers with common main app names (app, main) over sidecars
-func ExtractMainContainerImage(item unstructured.Unstructured) string {
+// extractMainContainerImage returns the image of the main application
+// container, preferring containers with common main app names over sidecars.
+func extractMainContainerImage(item unstructured.Unstructured) string {
 	containers, found, _ := unstructured.NestedSlice(item.Object, "spec", "containers")
 	if !found || len(containers) == 0 {
 		return "-"
 	}
 
-	// Common names for main application containers
 	mainContainerNames := []string{"app", "main", "application"}
 
 	// First pass: look for containers with common main app names
@@ -214,120 +234,4 @@ func ExtractMainContainerImage(item unstructured.Unstructured) string {
 	}
 
 	return "-"
-}
-
-func NestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
-	return unstructured.NestedString(obj, fields...)
-}
-
-func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
-	return c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-}
-
-func (c *Client) StreamLogs(ctx context.Context, namespace, name string, follow bool) (io.ReadCloser, error) {
-	tailLines := int64(200)
-	opts := &corev1.PodLogOptions{
-		Follow:    follow,
-		TailLines: &tailLines,
-	}
-	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
-	return req.Stream(ctx)
-}
-
-type PodMetrics struct {
-	Timestamp string `json:"timestamp"`
-	CPU       int64  `json:"cpu"`
-	Memory    int64  `json:"memory"`
-}
-
-func (c *Client) GetPodMetrics(ctx context.Context, namespace, name string) (*PodMetrics, error) {
-	gvr := schema.GroupVersionResource{
-		Group:    "metrics.k8s.io",
-		Version:  "v1beta1",
-		Resource: "pods",
-	}
-
-	obj, err := c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("getting pod metrics: %w", err)
-	}
-
-	containers, found, _ := unstructured.NestedSlice(obj.Object, "containers")
-	if !found || len(containers) == 0 {
-		return &PodMetrics{}, nil
-	}
-
-	var totalCPU, totalMem int64
-	for _, c := range containers {
-		container, ok := c.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		usage, _, _ := unstructured.NestedStringMap(container, "usage")
-		if cpu, ok := usage["cpu"]; ok {
-			totalCPU += parseCPU(cpu)
-		}
-		if mem, ok := usage["memory"]; ok {
-			totalMem += parseMem(mem)
-		}
-	}
-
-	ts, _, _ := unstructured.NestedString(obj.Object, "timestamp")
-
-	return &PodMetrics{
-		Timestamp: ts,
-		CPU:       totalCPU,
-		Memory:    totalMem,
-	}, nil
-}
-
-const (
-	nanocoresToMillicores = 1_000_000
-	coresToMillicores     = 1000
-	kiBToMiB              = 1024
-	miBToMiB              = 1
-	giBToMiB              = 1024
-	tiBToMiB              = 1024 * 1024
-	piBToMiB              = 1024 * 1024 * 1024
-	bytesToMiB            = 1024 * 1024
-)
-
-func parseCPU(s string) int64 {
-	var val int64
-	if len(s) > 0 && s[len(s)-1] == 'n' {
-		fmt.Sscanf(s, "%dn", &val)
-		return val / nanocoresToMillicores
-	}
-	if len(s) > 0 && s[len(s)-1] == 'm' {
-		fmt.Sscanf(s, "%dm", &val)
-		return val
-	}
-	fmt.Sscanf(s, "%d", &val)
-	return val * coresToMillicores
-}
-
-func parseMem(s string) int64 {
-	var val int64
-	if len(s) > 2 && s[len(s)-2:] == "Ki" {
-		fmt.Sscanf(s, "%dKi", &val)
-		return val / kiBToMiB
-	}
-	if len(s) > 2 && s[len(s)-2:] == "Mi" {
-		fmt.Sscanf(s, "%dMi", &val)
-		return val * miBToMiB
-	}
-	if len(s) > 2 && s[len(s)-2:] == "Gi" {
-		fmt.Sscanf(s, "%dGi", &val)
-		return val * giBToMiB
-	}
-	if len(s) > 2 && s[len(s)-2:] == "Ti" {
-		fmt.Sscanf(s, "%dTi", &val)
-		return val * tiBToMiB
-	}
-	if len(s) > 2 && s[len(s)-2:] == "Pi" {
-		fmt.Sscanf(s, "%dPi", &val)
-		return val * piBToMiB
-	}
-	fmt.Sscanf(s, "%d", &val)
-	return val / bytesToMiB
 }

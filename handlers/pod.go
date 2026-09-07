@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -11,6 +12,16 @@ import (
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	json.NewEncoder(w).Encode(v)
+}
+
+// writeErr maps a Manager error to an HTTP status: an unknown context is a
+// client error (400), anything else is treated as a server error (500).
+func writeErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, k8s.ErrUnknownContext) {
+		http.Error(w, "unknown context", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 func (h *Handler) PodDetail(w http.ResponseWriter, r *http.Request) {
@@ -26,33 +37,14 @@ func (h *Handler) PodInfo(w http.ResponseWriter, r *http.Request) {
 	ns := r.URL.Query().Get("namespace")
 	name := r.URL.Query().Get("name")
 
-	client, ok := h.clients[kubeCtx]
-	if !ok {
-		http.Error(w, "unknown context", http.StatusBadRequest)
-		return
-	}
-
-	obj, err := client.Get(r.Context(), "pods", ns, name)
+	pod, err := h.mgr.Get[k8s.Pod](r.Context(), kubeCtx, ns, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeErr(w, err)
 		return
-	}
-
-	ip, _, _ := k8s.NestedString(obj.Object, "status", "podIP")
-	node, _, _ := k8s.NestedString(obj.Object, "spec", "nodeName")
-	image := k8s.ExtractMainContainerImage(*obj)
-
-	info := map[string]string{
-		"name":   obj.GetName(),
-		"status": k8s.ExtractStatus(*obj),
-		"age":    obj.GetCreationTimestamp().Time.Format("2006-01-02 15:04"),
-		"ip":     ip,
-		"node":   node,
-		"image":  image,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	writeJSON(w, info)
+	writeJSON(w, pod)
 }
 
 func (h *Handler) PodMetrics(w http.ResponseWriter, r *http.Request) {
@@ -60,15 +52,9 @@ func (h *Handler) PodMetrics(w http.ResponseWriter, r *http.Request) {
 	ns := r.URL.Query().Get("namespace")
 	name := r.URL.Query().Get("name")
 
-	client, ok := h.clients[kubeCtx]
-	if !ok {
-		http.Error(w, "unknown context", http.StatusBadRequest)
-		return
-	}
-
-	metrics, err := client.GetPodMetrics(r.Context(), ns, name)
+	metrics, err := h.mgr.PodMetrics(r.Context(), kubeCtx, ns, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeErr(w, err)
 		return
 	}
 
@@ -82,15 +68,9 @@ func (h *Handler) PodLogs(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	follow := r.URL.Query().Get("follow") == "true"
 
-	client, ok := h.clients[kubeCtx]
-	if !ok {
-		http.Error(w, "unknown context", http.StatusBadRequest)
-		return
-	}
-
-	stream, err := client.StreamLogs(r.Context(), ns, name, follow)
+	stream, err := h.mgr.StreamLogs(r.Context(), kubeCtx, ns, name, follow)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeErr(w, err)
 		return
 	}
 	defer stream.Close()
@@ -124,14 +104,8 @@ func (h *Handler) PodDelete(w http.ResponseWriter, r *http.Request) {
 	ns := r.URL.Query().Get("namespace")
 	name := r.URL.Query().Get("name")
 
-	client, ok := h.clients[kubeCtx]
-	if !ok {
-		http.Error(w, "unknown context", http.StatusBadRequest)
-		return
-	}
-
-	if err := client.DeletePod(r.Context(), ns, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.mgr.DeletePod(r.Context(), kubeCtx, ns, name); err != nil {
+		writeErr(w, err)
 		return
 	}
 

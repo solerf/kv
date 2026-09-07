@@ -11,3 +11,5 @@ static/css/neobrutalismcss.css
 static/js/bootstrap.bundle.min.js
 static/js/jquery.min.js
 static/js/chart.umd.js
+
+kv.context
