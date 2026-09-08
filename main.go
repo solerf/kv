@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,12 +28,14 @@ func main() {
 		kong.Description("View Kubernetes resources in UI."),
 	)
 
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cfg, err := config.Load(cli.Config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		logger.Error("loading config", "err", err)
 		os.Exit(1)
 	}
 
@@ -42,9 +44,9 @@ func main() {
 		contexts = append(contexts, entry.Context)
 	}
 
-	mgr, err := k8s.NewManager(cli.Kubeconfig, contexts)
+	mgr, err := k8s.NewManager(cli.Kubeconfig, contexts, logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		logger.Error("creating manager", "err", err)
 		os.Exit(1)
 	}
 
@@ -54,7 +56,7 @@ func main() {
 		Entries: cfg.Entries,
 	})
 
-	fmt.Printf("kv listening on http://localhost%s\n", cli.Addr)
+	logger.Info("listening", "addr", "http://localhost"+cli.Addr)
 
 	go func() {
 		<-ctx.Done()
@@ -63,13 +65,13 @@ func main() {
 		// Stop serving first (drains in-flight requests), then release the
 		// manager's cluster connections.
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "graceful shutdown failed: %v\n", err)
+			logger.Error("graceful shutdown failed", "err", err)
 		}
 		mgr.Close()
 	}()
 
 	if err = srv.ListenAndServe(); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		logger.Error("server error", "err", err)
 		os.Exit(1)
 	}
 }

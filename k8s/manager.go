@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"sync"
 
@@ -13,37 +14,37 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// ErrUnknownContext is returned when the requested kube context is not
-// configured. ErrContextUnavailable is returned when a configured context's
-// client cannot be created (e.g. the context is missing from the kubeconfig).
+// Sentinel errors returned by Manager. ErrContextUnavailable wraps the
+// underlying client-creation failure.
 var (
 	ErrUnknownContext     = errors.New("unknown context")
 	ErrContextUnavailable = errors.New("context unavailable")
+	ErrNoContexts         = errors.New("no contexts configured")
+	ErrUnsupportedKind    = errors.New("unsupported resource kind")
 )
 
 // clientFactory lazily builds (and memoizes) the client for one context.
 type clientFactory = func() (*client, error)
 
-// Manager is the single public facade the rest of the app depends on. It is
-// created by main and injected into the server. Each configured context gets a
-// lazy factory at construction; the client itself is built on first use, so a
+// Manager is the public facade over one lazily-built client per context; a
 // context that is never opened costs only a small thunk.
 type Manager struct {
 	kubeconfig string
-	// clients maps a configured context to its lazy factory. Keys are fixed at
-	// construction and never added or removed, so reads need no lock; the only
-	// write is swapping a failed factory for a fresh one on the error path,
-	// which sync.Map handles.
+	logger     *slog.Logger
+	// clients maps each context to its lazy factory. Keys are fixed at
+	// construction; the only write swaps a failed factory, which sync.Map handles.
 	clients sync.Map // map[string]clientFactory
-	// created records the clients that were actually built, so Close can shut
-	// them down without instantiating the ones that were never used.
+	// created records the clients actually built, so Close skips unused contexts.
 	created sync.Map // map[string]*client
 }
 
 // NewManager registers a lazy factory per configured context without connecting
 // to any of them. It errors only when no context is configured.
-func NewManager(kubeconfig string, contexts []string) (*Manager, error) {
-	m := &Manager{kubeconfig: kubeconfig}
+func NewManager(kubeconfig string, contexts []string, logger *slog.Logger) (*Manager, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	m := &Manager{kubeconfig: kubeconfig, logger: logger}
 
 	var n int
 	for _, kubeContext := range contexts {
@@ -55,15 +56,14 @@ func NewManager(kubeconfig string, contexts []string) (*Manager, error) {
 	}
 
 	if n == 0 {
-		return nil, fmt.Errorf("no contexts configured")
+		return nil, ErrNoContexts
 	}
 
 	return m, nil
 }
 
-// newFactory returns a memoizing factory for one context. sync.OnceValues runs
-// newClient at most once and serializes concurrent first callers. A client that
-// is built successfully is recorded so Close can shut it down.
+// newFactory returns a memoizing factory: sync.OnceValues builds the client at
+// most once and records it so Close can shut it down.
 func (m *Manager) newFactory(kubeCtx string) clientFactory {
 	return sync.OnceValues(func() (*client, error) {
 		c, err := newClient(m.kubeconfig, kubeCtx)
@@ -75,8 +75,8 @@ func (m *Manager) newFactory(kubeCtx string) clientFactory {
 	})
 }
 
-// Close releases the connections of every client that was actually created.
-// It is safe to call once during shutdown; unused contexts are left untouched.
+// Close releases every client that was actually created; unused contexts are
+// left untouched.
 func (m *Manager) Close() {
 	m.created.Range(func(_, v any) bool {
 		v.(*client).close()
@@ -84,20 +84,15 @@ func (m *Manager) Close() {
 	})
 }
 
-// CheckContext reports whether the context can be served: nil if a client is
-// available, ErrUnknownContext if the context is not configured, or a wrapped
-// ErrContextUnavailable if the client cannot be created. It builds the client
-// (once) as a side effect, so a later call reuses it.
+// CheckContext reports whether the context can be served (nil if so), building
+// its client once as a side effect so a later call reuses it.
 func (m *Manager) CheckContext(kubeCtx string) error {
 	_, err := m.client(kubeCtx)
 	return err
 }
 
-// client returns the client for a configured context, building it on first use.
-// An unconfigured context returns ErrUnknownContext; a configured context whose
-// client cannot be built returns an error wrapping ErrContextUnavailable. On a
-// creation failure the memoized error is replaced with a fresh factory so the
-// next call retries rather than returning the same error forever.
+// client returns the client for a context, building it once. On a build failure
+// it swaps in a fresh factory so the next call retries instead of caching the error.
 func (m *Manager) client(kubeCtx string) (*client, error) {
 	v, ok := m.clients.Load(kubeCtx)
 	if !ok {
@@ -136,7 +131,7 @@ func (m *Manager) Describe(ctx context.Context, kubeCtx, kind, namespace, name s
 	}
 	gvr, ok := resourceGVR[kind]
 	if !ok {
-		return "", fmt.Errorf("unsupported resource kind: %s", kind)
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedKind, kind)
 	}
 	obj, err := c.getGVR(ctx, gvr, namespace, name)
 	if err != nil {
@@ -165,17 +160,15 @@ func (m *Manager) DeletePod(ctx context.Context, kubeCtx, namespace, name string
 	return c.deletePod(ctx, namespace, name)
 }
 
-// resourceModel is satisfied by *T for each model type T: it knows its own GVR
-// and how to populate itself from an unstructured object. The *T constraint
-// lets List/Get infer the pointer type from the value type at the call site.
+// resourceModel is satisfied by *T: it knows its GVR and fills itself from an
+// unstructured object. The *T constraint lets List/Get infer the pointer type.
 type resourceModel[T any] interface {
 	*T
 	gvr() schema.GroupVersionResource
 	from(unstructured.Unstructured)
 }
 
-// List fetches all objects of model type T in a namespace, returning typed
-// models. Usage: k8s.List[k8s.Deployment](mgr, ctx, kubeCtx, ns).
+// List fetches all objects of model type T in a namespace as typed models.
 func (m *Manager) List[T any, PT resourceModel[T]](ctx context.Context, kubeCtx, namespace string) ([]T, error) {
 	var probe PT = new(T)
 	items, err := m.listGVR(ctx, kubeCtx, probe.gvr(), namespace)
@@ -189,8 +182,7 @@ func (m *Manager) List[T any, PT resourceModel[T]](ctx context.Context, kubeCtx,
 	return out, nil
 }
 
-// Get fetches a single object of model type T by name, returning a typed model.
-// Usage: k8s.Get[k8s.Pod](mgr, ctx, kubeCtx, ns, name).
+// Get fetches a single object of model type T by name as a typed model.
 func (m *Manager) Get[T any, PT resourceModel[T]](ctx context.Context, kubeCtx, namespace, name string) (T, error) {
 	var out T
 	var p PT = &out
@@ -202,8 +194,7 @@ func (m *Manager) Get[T any, PT resourceModel[T]](ctx context.Context, kubeCtx, 
 	return out, nil
 }
 
-// listWorkers bounds how many resource kinds are fetched concurrently in
-// ListResources.
+// listWorkers bounds the concurrency of ListResources.
 const listWorkers = 3
 
 // ResourceTable is one kind's worth of rows for the dashboard.
@@ -212,13 +203,11 @@ type ResourceTable struct {
 	Items any    `json:"items"`
 }
 
-// ListResources fetches every dashboard resource kind for a namespace,
-// concurrently through a bounded worker pool. A kind that errors (e.g. absent
-// on the cluster) is skipped; an unknown or unavailable context returns an
-// error. Tables keep a stable order and empty kinds are omitted.
+// ListResources fetches every dashboard kind for a namespace through a bounded
+// worker pool, in a stable order. Failed kinds are skipped (logged by severity,
+// see logListError) and empty kinds omitted; a bad context returns an error.
 func (m *Manager) ListResources(ctx context.Context, kubeCtx, namespace string) ([]ResourceTable, error) {
-	// Build the client once up front so the workers reuse it (and so an
-	// unusable context fails here instead of surfacing as an empty result).
+	// Build the client up front so a bad context errors here, not as empty results.
 	if err := m.CheckContext(kubeCtx); err != nil {
 		return nil, err
 	}
@@ -249,12 +238,15 @@ func (m *Manager) ListResources(ctx context.Context, kubeCtx, namespace string) 
 
 	for range listWorkers {
 		wg.Go(func() {
-			// Each index is handled by exactly one worker, so writing
-			// out[i] from different goroutines is race-free.
+			// Each index is written by exactly one worker, so out[i] is race-free.
 			for i := range jobs {
 				fetch := fetches[i]
 				items, count, err := fetch.run()
-				if err != nil || count == 0 {
+				if err != nil {
+					m.logListError(fetch.kind, err)
+					continue
+				}
+				if count == 0 {
 					continue
 				}
 				out[i] = ResourceTable{Kind: fetch.kind, Items: items}
@@ -268,8 +260,22 @@ func (m *Manager) ListResources(ctx context.Context, kubeCtx, namespace string) 
 	close(jobs)
 	wg.Wait()
 
-	// guard to remove not loaded resources that were allocated in the table
+	// Drop kinds that never loaded (still zero-value).
 	return slices.DeleteFunc(out, func(t ResourceTable) bool {
 		return t.Kind == ""
 	}), nil
+}
+
+// logListError logs a per-kind fetch failure by severity: absent kinds and
+// permission denials are normal (debug), a canceled request is silent, and real
+// faults (5xx, throttling, unreachable) warn.
+func (m *Manager) logListError(kind string, err error) {
+	switch {
+	case errors.Is(err, ErrCanceled):
+		// Client went away; nothing to report.
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrForbidden), errors.Is(err, ErrUnauthorized):
+		m.logger.Debug("skipping resource kind", "kind", kind, "reason", err)
+	default:
+		m.logger.Warn("listing resource kind failed", "kind", kind, "err", err)
+	}
 }

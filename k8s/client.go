@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,13 +18,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// client is a single connection to one kube context. It is unexported; callers
-// go through Manager, which owns one client per context.
+// client is one connection to a single kube context; callers go through Manager.
 type client struct {
 	dynamic    dynamic.Interface
 	clientset  kubernetes.Interface
 	httpClient *http.Client
 }
+
+// ErrKubeconfigNotFound is returned when no kubeconfig can be located.
+var ErrKubeconfigNotFound = errors.New("kubeconfig not found: could not connect to a Kubernetes cluster")
 
 func newClient(kubeconfig, kubeContext string) (*client, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
@@ -32,7 +35,7 @@ func newClient(kubeconfig, kubeContext string) (*client, error) {
 	}
 
 	if !hasKubeconfig(rules) {
-		return nil, fmt.Errorf("kubeconfig not found: could not connect to a Kubernetes cluster.\n\nSet KUBECONFIG, pass --kubeconfig, or place a config at ~/.kube/config")
+		return nil, fmt.Errorf("%w\n\nSet KUBECONFIG, pass --kubeconfig, or place a config at ~/.kube/config", ErrKubeconfigNotFound)
 	}
 
 	overrides := &clientcmd.ConfigOverrides{}
@@ -45,8 +48,7 @@ func newClient(kubeconfig, kubeContext string) (*client, error) {
 		return nil, fmt.Errorf("kubeconfig found but could not connect: %w", err)
 	}
 
-	// Share one HTTP client between the dynamic and typed clients so they use
-	// the same connection pool, which close() can then release as a unit.
+	// Share one HTTP client so close() can release the connection pool as a unit.
 	httpClient, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return nil, fmt.Errorf("could not build HTTP client: %w", err)
@@ -65,8 +67,7 @@ func newClient(kubeconfig, kubeContext string) (*client, error) {
 	return &client{dynamic: dyn, clientset: cs, httpClient: httpClient}, nil
 }
 
-// close releases the client's idle keep-alive connections. In-flight requests
-// are unaffected (CloseIdleConnections only touches idle connections).
+// close releases idle keep-alive connections; in-flight requests are unaffected.
 func (c *client) close() {
 	c.httpClient.CloseIdleConnections()
 }
@@ -84,9 +85,8 @@ func hasKubeconfig(rules *clientcmd.ClientConfigLoadingRules) bool {
 	return false
 }
 
-// resourceGVR is the single source of truth for the GroupVersionResource (GVR)
-// of each supported kind. Models reference it by key from their gvr() method;
-// Describe resolves it from the kind string passed in the request.
+// resourceGVR is the single source of truth for each supported kind's GVR (GroupVersionResource),
+// keyed by the kind string used in requests.
 var resourceGVR = map[string]schema.GroupVersionResource{
 	"pods":         {Group: "", Version: "v1", Resource: "pods"},
 	"services":     {Group: "", Version: "v1", Resource: "services"},
@@ -110,21 +110,27 @@ func (c *client) listGVR(ctx context.Context, gvr schema.GroupVersionResource, n
 		res, err = c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	}
 	if err != nil {
-		return nil, err
+		return nil, classify(err)
 	}
 
 	return res.Items, nil
 }
 
 func (c *client) getGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
+	var (
+		obj *unstructured.Unstructured
+		err error
+	)
 	if namespace == "" {
-		return c.dynamic.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+		obj, err = c.dynamic.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		obj, err = c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	}
-	return c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	return obj, classify(err)
 }
 
 func (c *client) deletePod(ctx context.Context, namespace, name string) error {
-	return c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	return classify(c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{}))
 }
 
 func (c *client) streamLogs(ctx context.Context, namespace, name string, follow bool) (io.ReadCloser, error) {
@@ -134,7 +140,8 @@ func (c *client) streamLogs(ctx context.Context, namespace, name string, follow 
 		TailLines: &tailLines,
 	}
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, opts)
-	return req.Stream(ctx)
+	rc, err := req.Stream(ctx)
+	return rc, classify(err)
 }
 
 // formatAge renders a creation timestamp the way the UI expects it.

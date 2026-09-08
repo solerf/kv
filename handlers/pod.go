@@ -14,14 +14,18 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// writeErr maps a Manager error to an HTTP status: an unknown context is a
-// client error (400), anything else is treated as a server error (500).
+// writeErr maps a Manager error to an HTTP status: an unknown context or an
+// unsupported resource kind is a client error (400); anything else is treated
+// as a server error (500).
 func writeErr(w http.ResponseWriter, err error) {
-	if errors.Is(err, k8s.ErrUnknownContext) {
+	switch {
+	case errors.Is(err, k8s.ErrUnknownContext):
 		http.Error(w, "unknown context", http.StatusBadRequest)
-		return
+	case errors.Is(err, k8s.ErrUnsupportedKind):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 func (h *Handler) PodDetail(w http.ResponseWriter, r *http.Request) {

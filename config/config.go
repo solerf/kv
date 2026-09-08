@@ -2,10 +2,18 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+// ErrConfigNotFound is returned when the kv.context file does not exist;
+// ErrConfigEmpty when it exists but contains no entries.
+var (
+	ErrConfigNotFound = errors.New("kv.context not found")
+	ErrConfigEmpty    = errors.New("kv.context is empty")
 )
 
 type Entry struct {
@@ -27,7 +35,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("kv.context not found at %s: create this file with your contexts and namespaces", path)
+		return nil, fmt.Errorf("%w at %s: create this file with your contexts and namespaces", ErrConfigNotFound, path)
 	}
 
 	f, err := os.Open(path)
@@ -53,7 +61,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("kv.context at %s is empty: add at least one context entry", path)
+		return nil, fmt.Errorf("%w (%s): add at least one context entry", ErrConfigEmpty, path)
 	}
 	return &Config{Entries: entries}, nil
 }
