@@ -2,17 +2,19 @@ document.addEventListener("DOMContentLoaded", function () {
     const ctx = document.getElementById("pod-context").value;
     const ns = document.getElementById("pod-namespace").value;
     const name = document.getElementById("pod-name").value;
-    const params =
-        "context=" +
-        encodeURIComponent(ctx) +
-        "&namespace=" +
-        encodeURIComponent(ns) +
-        "&name=" +
-        encodeURIComponent(name);
+    const params = new URLSearchParams({context: ctx, namespace: ns, name});
+
+    // On an error status the backend sends the message as plain text.
+    function jsonOrThrow(r) {
+        if (r.ok) return r.json();
+        return r.text().then((msg) => {
+            throw new Error(msg.trim() || r.statusText);
+        });
+    }
 
     // Pod Info
     fetch("/api/pod/info?" + params)
-        .then((r) => r.json())
+        .then(jsonOrThrow)
         .then((info) => {
             document.getElementById("pod-status").textContent = info.status || "-";
             document.getElementById("pod-image").textContent = info.image || "-";
@@ -143,6 +145,11 @@ document.addEventListener("DOMContentLoaded", function () {
             signal: logsController.signal,
         })
             .then((r) => {
+                if (!r.ok) {
+                    return r.text().then((msg) => {
+                        logsOutput.textContent = "Error: " + (msg.trim() || r.statusText);
+                    });
+                }
                 const reader = r.body.getReader();
                 const decoder = new TextDecoder();
                 logsOutput.textContent = "";
@@ -192,7 +199,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(() => {
                 alert("Pod deleted");
                 window.location.href =
-                    "/?context=" + encodeURIComponent(ctx) + "&namespace=" + encodeURIComponent(ns);
+                    "/?" + new URLSearchParams({context: ctx, namespace: ns});
             })
             .catch((err) => {
                 alert("Error: " + err.message);

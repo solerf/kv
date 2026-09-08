@@ -7,10 +7,22 @@ document.addEventListener("DOMContentLoaded", function () {
     const describeTitle = document.getElementById("describe-modal-title");
     const describeBody = document.getElementById("describe-modal-body");
 
+    // Escapes for both text and attribute contexts (quotes included).
     function escapeHTML(value) {
-        const div = document.createElement("div");
-        div.textContent = value == null ? "" : String(value);
-        return div.innerHTML;
+        return (value == null ? "" : String(value))
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    // On an error status the backend sends the message as plain text.
+    function jsonOrThrow(r) {
+        if (r.ok) return r.json();
+        return r.text().then((msg) => {
+            throw new Error(msg.trim() || r.statusText);
+        });
     }
 
     function tablePlaceholder() {
@@ -52,11 +64,7 @@ document.addEventListener("DOMContentLoaded", function () {
         describeBody.textContent = "Loading...";
         describeModal.show();
 
-        const params =
-            "context=" + encodeURIComponent(ctx) +
-            "&namespace=" + encodeURIComponent(ns) +
-            "&kind=" + encodeURIComponent(kind) +
-            "&name=" + encodeURIComponent(name);
+        const params = new URLSearchParams({context: ctx, namespace: ns, kind, name});
 
         fetch("/api/describe?" + params)
             .then((r) => r.text())
@@ -73,7 +81,7 @@ document.addEventListener("DOMContentLoaded", function () {
         nsSelect.innerHTML = "";
         showPlaceholders();
         return fetch("/api/namespaces?context=" + encodeURIComponent(ctx))
-            .then((r) => r.json())
+            .then(jsonOrThrow)
             .then((namespaces) => {
                 namespaces.forEach((ns) => {
                     const opt = document.createElement("option");
@@ -81,11 +89,13 @@ document.addEventListener("DOMContentLoaded", function () {
                     opt.textContent = ns;
                     nsSelect.appendChild(opt);
                 });
-                // After namespaces are loaded, load data with the first namespace
-                if (namespaces.length > 0) {
-                    loadData();
-                }
                 return namespaces;
+            })
+            .catch((err) => {
+                resourcesSection.innerHTML =
+                    '<p class="text-danger">Error: ' + escapeHTML(err.message) + "</p>";
+                podsSection.innerHTML = "";
+                return [];
             });
     }
 
@@ -96,11 +106,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         showPlaceholders();
 
-        const params =
-            "context=" + encodeURIComponent(ctx) + "&namespace=" + encodeURIComponent(ns);
+        const params = new URLSearchParams({context: ctx, namespace: ns});
 
         fetch("/api/resources?" + params)
-            .then((r) => r.json())
+            .then(jsonOrThrow)
             .then((tables) => {
                 let html = "";
                 if (!tables || tables.length === 0) {
@@ -118,7 +127,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         t.items.forEach((item) => {
                             // Build the name cell content
                             let nameContent = '<strong>' + escapeHTML(item.name) + '</strong>';
-                            if (t.kind === 'ingresses' && item.deterministicDNS) {
+                            if (t.kind.toLowerCase() === 'ingresses' && item.deterministicDNS) {
                                 // Split by comma and display each DNS value on a new line
                                 const dnsValues = item.deterministicDNS.split(',').map(v => v.trim());
                                 nameContent += '<br><small class="text-muted">';
@@ -145,10 +154,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 resourcesSection.innerHTML = html;
                 bindRowClicks();
+            })
+            .catch((err) => {
+                resourcesSection.innerHTML =
+                    '<p class="text-danger">Error: ' + escapeHTML(err.message) + "</p>";
             });
 
         fetch("/api/pods?" + params)
-            .then((r) => r.json())
+            .then(jsonOrThrow)
             .then((pods) => {
                 let html = "";
                 if (!pods || pods.length === 0) {
@@ -197,6 +210,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 podsSection.innerHTML = html;
                 bindPodClicks();
+            })
+            .catch((err) => {
+                podsSection.innerHTML =
+                    '<div class="col-12"><p class="text-danger">Error: ' + escapeHTML(err.message) + "</p></div>";
             });
     }
 
@@ -221,14 +238,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 const ns = nsSelect.value;
                 const name = card.dataset.name;
                 window.location.href =
-                    "/pod?context=" + encodeURIComponent(ctx) +
-                    "&namespace=" + encodeURIComponent(ns) +
-                    "&name=" + encodeURIComponent(name);
+                    "/pod?" + new URLSearchParams({context: ctx, namespace: ns, name});
             });
         });
     }
 
-    ctxSelect.addEventListener("change", updateNamespaces);
+    ctxSelect.addEventListener("change", () => {
+        updateNamespaces().then((namespaces) => {
+            if (namespaces.length > 0) loadData();
+        });
+    });
     nsSelect.addEventListener("change", loadData);
 
     // Restore context and namespace from URL parameters
@@ -246,19 +265,16 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    updateNamespaces().then(() => {
+    updateNamespaces().then((namespaces) => {
         if (urlNamespace) {
             // Try to select the namespace from URL
             for (let i = 0; i < nsSelect.options.length; i++) {
                 if (nsSelect.options[i].value === urlNamespace) {
                     nsSelect.selectedIndex = i;
-                    // loadData was already called by updateNamespaces,
-                    // but we need to call it again with the correct namespace
-                    loadData();
-                    return;
+                    break;
                 }
             }
         }
-        // If no URL namespace or not found, loadData was already called by updateNamespaces
+        if (namespaces.length > 0) loadData();
     });
 });

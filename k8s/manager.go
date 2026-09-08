@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -129,7 +130,7 @@ func (m *Manager) Describe(ctx context.Context, kubeCtx, kind, namespace, name s
 	if err != nil {
 		return "", err
 	}
-	gvr, ok := resourceGVR[kind]
+	gvr, ok := resourceGVR[strings.ToLower(kind)]
 	if !ok {
 		return "", fmt.Errorf("%w: %s", ErrUnsupportedKind, kind)
 	}
