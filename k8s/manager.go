@@ -138,6 +138,8 @@ func (m *Manager) Describe(ctx context.Context, kubeCtx, kind, namespace, name s
 	if err != nil {
 		return "", fmt.Errorf("getting %s/%s: %w", kind, name, err)
 	}
+	// Server-side-apply ownership ledger; noise for a human reader.
+	obj.SetManagedFields(nil)
 	out, err := yaml.Marshal(obj.Object)
 	if err != nil {
 		return "", err
