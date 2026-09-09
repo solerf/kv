@@ -7,6 +7,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const describeTitle = document.getElementById("describe-modal-title");
     const describeBody = document.getElementById("describe-modal-body");
 
+    const podColumns = ["", "Name", "Status", "Image", "Age", "Labels"];
+
     // Escapes for both text and attribute contexts (quotes included).
     function escapeHTML(value) {
         return (value == null ? "" : String(value))
@@ -25,36 +27,96 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function tablePlaceholder() {
-        let html = "";
-        for (let i = 0; i < 2; i++) {
-            html += '<h4 class="mt-3 placeholder-glow"><span class="placeholder col-2"></span></h4>';
-            html += '<div class="table-responsive"><table class="table neo-table"><thead><tr><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
-            for (let j = 0; j < 4; j++) {
-                html += '<tr class="placeholder-glow"><td><span class="placeholder col-8"></span></td><td><span class="placeholder col-6"></span></td><td><span class="placeholder col-4"></span></td><td><span class="placeholder col-4"></span></td></tr>';
-            }
-            html += "</tbody></table></div>";
+    function statusClass(status) {
+        if (status === "Running" || status === "Succeeded") return "status-running";
+        if (status === "Pending" || status === "ContainerCreating") return "status-pending";
+        if (status === "Failed" || /BackOff|Error|Crash|Evicted|Invalid/i.test(status)) return "status-failed";
+        return "";
+    }
+
+    // Sorted key=value badges; empty string when there are no labels.
+    function labelBadges(labels) {
+        const keys = Object.keys(labels || {}).sort();
+        if (keys.length === 0) return "";
+        let html = '<div class="label-list">';
+        keys.forEach((k) => {
+            const kv = escapeHTML(k + "=" + labels[k]);
+            html += '<span class="badge label-badge" title="' + kv + '">' + kv + "</span>";
+        });
+        return html + "</div>";
+    }
+
+    function tableOpen(columns) {
+        let html = '<div class="table-responsive"><table class="table neo-table"><thead><tr>';
+        columns.forEach((c, i) => {
+            html += i === 0 ? '<th style="width: 30px;"></th>' : "<th>" + c + "</th>";
+        });
+        return html + "</tr></thead><tbody>";
+    }
+
+    const tableClose = "</tbody></table></div>";
+
+    function cardPlaceholder(n) {
+        let html = '<div class="resource-grid">';
+        for (let i = 0; i < n; i++) {
+            html += '<div class="neo-card p-3 placeholder-glow">';
+            html += '<h6><span class="placeholder col-10"></span></h6>';
+            html += '<small class="d-block"><span class="placeholder col-6"></span></small>';
+            html += '<small class="d-block"><span class="placeholder col-4"></span></small>';
+            html += '<small class="d-block"><span class="placeholder col-5"></span></small>';
+            html += "</div>";
         }
-        return html;
+        return html + "</div>";
+    }
+
+    function resourcePlaceholder() {
+        return '<h3 class="mt-3 mb-2 placeholder-glow"><span class="placeholder col-2"></span></h3>' + cardPlaceholder(6);
     }
 
     function podPlaceholder() {
-        let html = "";
-        for (let i = 0; i < 8; i++) {
-            html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 placeholder-glow">';
-            html += '<h6><span class="placeholder col-10"></span></h6>';
-            html += '<p class="mb-1"><span class="placeholder col-4"></span></p>';
-            html += '<small class="d-block"><span class="placeholder col-6"></span></small>';
-            html += '<small class="d-block"><span class="placeholder col-7"></span></small>';
-            html += '<small class="d-block"><span class="placeholder col-5"></span></small>';
-            html += "</div></div>";
+        let html = tableOpen(podColumns);
+        for (let i = 0; i < 6; i++) {
+            html += '<tr class="placeholder-glow"><td></td><td><span class="placeholder col-8"></span></td><td><span class="placeholder col-6"></span></td><td><span class="placeholder col-8"></span></td><td><span class="placeholder col-4"></span></td><td><span class="placeholder col-10"></span></td></tr>';
         }
-        return html;
+        return html + tableClose;
     }
 
     function showPlaceholders() {
-        resourcesSection.innerHTML = tablePlaceholder();
+        resourcesSection.innerHTML = resourcePlaceholder();
         podsSection.innerHTML = podPlaceholder();
+    }
+
+    // API kinds are plural ("Ingresses"); the card shows the singular.
+    function singular(kind) {
+        return kind.endsWith("sses") ? kind.slice(0, -2) : kind.replace(/s$/, "");
+    }
+
+    function resourceCard(kind, item) {
+        let html = '<div class="neo-card p-3 position-relative" data-kind="' + escapeHTML(kind) + '" data-name="' + escapeHTML(item.name) + '">';
+        html += '<i class="bi bi-arrows-fullscreen resource-view-icon position-absolute top-0 end-0 m-2" style="cursor: pointer;"></i>';
+        html += '<h6 class="fw-bold pe-4 mb-0" title="' + escapeHTML(item.name) + '">' + escapeHTML(item.name) + "</h6>";
+        html += '<div class="resource-kind">' + escapeHTML(singular(kind)) + "</div>";
+        if (kind.toLowerCase() === "ingresses" && item.deterministicDNS) {
+            // One DNS name per line.
+            html += '<small class="text-muted d-block mb-1">' +
+                item.deterministicDNS.split(",").map((v) => escapeHTML(v.trim())).join("<br>") +
+                "</small>";
+        }
+        html += '<small class="text-muted d-block">Namespace: ' + escapeHTML(item.namespace) + "</small>";
+        html += '<small class="text-muted d-block">Age: ' + escapeHTML(item.age) + "</small>";
+        html += '<small class="text-muted d-block">Status: ' + escapeHTML(item.status) + "</small>";
+        html += labelBadges(item.labels);
+        return html + "</div>";
+    }
+
+    function podRow(pod) {
+        return '<tr data-name="' + escapeHTML(pod.name) + '">' +
+            '<td><i class="bi bi-arrows-fullscreen pod-view-icon" style="cursor: pointer;"></i></td>' +
+            "<td><strong>" + escapeHTML(pod.name) + "</strong></td>" +
+            '<td><span class="' + statusClass(pod.status) + '">' + escapeHTML(pod.status) + "</span></td>" +
+            '<td class="text-break">' + escapeHTML(pod.image || "-") + "</td>" +
+            "<td>" + escapeHTML(pod.age) + "</td>" +
+            "<td>" + labelBadges(pod.labels) + "</td></tr>";
     }
 
     function openDescribe(kind, name) {
@@ -115,45 +177,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!tables || tables.length === 0) {
                     html = '<p class="text-muted">No resources found.</p>';
                 } else {
-                    tables.forEach((t) => {
-                        html +=
-                            '<h4 class="mt-3">' +
-                            escapeHTML(t.kind) +
-                            ' <span class="badge bg-dark">' +
-                            t.items.length +
-                            "</span></h4>";
-                        html +=
-                            '<div class="table-responsive"><table class="table neo-table" data-kind="' + escapeHTML(t.kind) + '"><thead><tr><th style="width: 30px;"></th><th>Name</th><th>Namespace</th><th>Age</th><th>Status</th></tr></thead><tbody>';
-                        t.items.forEach((item) => {
-                            // Build the name cell content
-                            let nameContent = '<strong>' + escapeHTML(item.name) + '</strong>';
-                            if (t.kind.toLowerCase() === 'ingresses' && item.deterministicDNS) {
-                                // Split by comma and display each DNS value on a new line
-                                const dnsValues = item.deterministicDNS.split(',').map(v => v.trim());
-                                nameContent += '<br><small class="text-muted">';
-                                dnsValues.forEach((dns, idx) => {
-                                    if (idx > 0) nameContent += '<br>';
-                                    nameContent += escapeHTML(dns);
-                                });
-                                nameContent += '</small>';
-                            }
-
-                            html +=
-                                '<tr data-name="' + escapeHTML(item.name) + '"><td><i class="bi bi-arrows-fullscreen resource-view-icon" style="cursor: pointer;"></i></td><td>' +
-                                nameContent +
-                                "</td><td>" +
-                                escapeHTML(item.namespace) +
-                                "</td><td>" +
-                                escapeHTML(item.age) +
-                                "</td><td>" +
-                                escapeHTML(item.status) +
-                                "</td></tr>";
-                        });
-                        html += "</tbody></table></div>";
-                    });
+                    const cards = tables.flatMap((t) => t.items.map((item) => resourceCard(t.kind, item)));
+                    html += '<h3 class="mt-3 mb-2">Resources <span class="badge bg-dark">' + cards.length + "</span></h3>";
+                    html += '<div class="resource-grid">' + cards.join("") + "</div>";
                 }
                 resourcesSection.innerHTML = html;
-                bindRowClicks();
+                bindResourceClicks();
             })
             .catch((err) => {
                 resourcesSection.innerHTML =
@@ -165,66 +194,25 @@ document.addEventListener("DOMContentLoaded", function () {
             .then((pods) => {
                 let html = "";
                 if (!pods || pods.length === 0) {
-                    html =
-                        '<div class="col-12"><p class="text-muted">No pods found.</p></div>';
+                    html = '<p class="text-muted">No pods found.</p>';
                 } else {
-                    pods.forEach((pod) => {
-                        let statusClass = "";
-                        if (pod.status === "Running" || pod.status === "Succeeded") statusClass = "status-running";
-                        else if (pod.status === "Pending" || pod.status === "ContainerCreating") statusClass = "status-pending";
-                        else if (pod.status === "Failed" || /BackOff|Error|Crash|Evicted|Invalid/i.test(pod.status))
-                            statusClass = "status-failed";
-
-                        html += '<div class="col-md-6 col-lg-4 mb-3"><div class="neo-card p-3 h-100 position-relative" data-name="' + escapeHTML(pod.name) + '">';
-                        html += '<i class="bi bi-arrows-fullscreen pod-view-icon position-absolute top-0 end-0 m-2" style="cursor: pointer; font-size: 1.2rem;"></i>';
-                        html +=
-                            '<h6 class="fw-bold" title="' +
-                            escapeHTML(pod.name) +
-                            '">' +
-                            escapeHTML(pod.name) +
-                            "</h6>";
-                        html +=
-                            '<p class="mb-1"><span class="' +
-                            statusClass +
-                            '">' +
-                            escapeHTML(pod.status) +
-                            "</span></p>";
-                        html +=
-                            '<small class="text-muted d-block">Image: ' +
-                            escapeHTML(pod.image || "-") +
-                            "</small>";
-                        html +=
-                            '<small class="text-muted d-block">IP: ' +
-                            escapeHTML(pod.ip || "-") +
-                            "</small>";
-                        html +=
-                            '<small class="text-muted d-block">Node: ' +
-                            escapeHTML(pod.node || "-") +
-                            "</small>";
-                        html +=
-                            '<small class="text-muted d-block">Age: ' +
-                            escapeHTML(pod.age) +
-                            "</small>";
-                        html += "</div></div>";
-                    });
+                    html = tableOpen(podColumns) + pods.map(podRow).join("") + tableClose;
                 }
                 podsSection.innerHTML = html;
                 bindPodClicks();
             })
             .catch((err) => {
                 podsSection.innerHTML =
-                    '<div class="col-12"><p class="text-danger">Error: ' + escapeHTML(err.message) + "</p></div>";
+                    '<p class="text-danger">Error: ' + escapeHTML(err.message) + "</p>";
             });
     }
 
-    function bindRowClicks() {
+    function bindResourceClicks() {
         document.querySelectorAll(".resource-view-icon").forEach((icon) => {
             icon.addEventListener("click", function (e) {
                 e.stopPropagation();
-                const row = this.closest("tr");
-                const kind = row.closest("table").dataset.kind;
-                const name = row.dataset.name;
-                openDescribe(kind, name);
+                const card = this.closest("div[data-name]");
+                openDescribe(card.dataset.kind, card.dataset.name);
             });
         });
     }
@@ -233,12 +221,9 @@ document.addEventListener("DOMContentLoaded", function () {
         document.querySelectorAll(".pod-view-icon").forEach((icon) => {
             icon.addEventListener("click", function (e) {
                 e.stopPropagation();
-                const card = this.closest("div[data-name]");
-                const ctx = ctxSelect.value;
-                const ns = nsSelect.value;
-                const name = card.dataset.name;
+                const name = this.closest("tr").dataset.name;
                 window.location.href =
-                    "/pod?" + new URLSearchParams({context: ctx, namespace: ns, name});
+                    "/pod?" + new URLSearchParams({context: ctxSelect.value, namespace: nsSelect.value, name});
             });
         });
     }

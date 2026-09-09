@@ -200,6 +200,23 @@ h5 {
     box-shadow: var(--shadow-md);
 }
 
+/* As many cards per row as fit; wraps as the viewport narrows. */
+.resource-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.resource-kind {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+}
+
 /* ==========================================================================
    Icons
    ========================================================================== */
@@ -343,6 +360,28 @@ h5 {
     padding: 0.25em 0.5em !important;
     border-radius: 0.2rem !important;
     font-size: 0.75rem !important;
+}
+
+.label-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+/* Inside a table cell the badges sit flush with the row. */
+.neo-table .label-list {
+    margin-top: 0;
+}
+
+.label-badge {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.7rem !important;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ==========================================================================
